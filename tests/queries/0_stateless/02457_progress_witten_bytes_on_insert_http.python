@@ -1,0 +1,35 @@
+#!/usr/bin/env python3
+from socket import socket, AF_INET, SOCK_STREAM
+
+
+PROGRESS_HEADERS = ('X-ClickHouse-Summary', 'X-ClickHouse-Progress',)
+
+
+def main():
+    # host = os.environ['CLICKHOUSE_HOST']
+    host = 'localhost'
+    # port = int(os.environ['CLICKHOUSE_PORT_HTTP'])
+    port = 8123
+
+    sock = socket(AF_INET, SOCK_STREAM)
+    sock.connect((host, port))
+    sock.settimeout(5)
+    s = "POST /?wait_end_of_query=1&send_progress_in_http_headers=1&http_headers_progress_interval_ms=0 HTTP/1.1\r\n"
+    s += "Host: %s\r\n" % host
+    s += "Content-Length: 53\r\n"
+    s += "Content-type: text/plain\r\n"
+    s += "\r\n"
+    s += "INSERT INTO my_table select * from numbers(10000000)\r\n\r\n"
+    sock.sendall(s.encode())
+    while True:
+        data = sock.recv(1024).decode()
+        if not data:
+            break
+        for line in data.splitlines():
+            if any([header in line for header in PROGRESS_HEADERS]):
+                print(line)
+    sock.close()
+
+
+if __name__ == "__main__":
+    main()
