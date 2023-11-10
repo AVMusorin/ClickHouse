@@ -83,9 +83,11 @@ public:
 
     bool supportsDelete() const override { return true; }
 
-    bool supportsTrivialCountOptimization() const override { return true; }
+    bool supportsTrivialCountOptimization() const override { return getContext(); }
 
     std::optional<UInt64> totalRows(const Settings & settings) const override;
+
+    std::optional<UInt64> totalBytes(const Settings & settings) const override;
 
 private:
     const String primary_key;
@@ -97,5 +99,10 @@ private:
     bool read_only;
 
     void initDB();
+
+    RocksDBSettingsPtr getSettings() const
+    {
+        return storage_settings.get();
+    }
 };
 }
