@@ -2,9 +2,11 @@
 
 #include <memory>
 #include <Common/SharedMutex.h>
+#include "Storages/RocksDB/EmbededRocksDBSettings.h"
 #include <Storages/IStorage.h>
 #include <Interpreters/IKeyValueEntity.h>
 #include <rocksdb/status.h>
+#include <Storages/RocksDB/EmbeddedRocksDBSink.h>
 
 
 namespace rocksdb
@@ -32,6 +34,7 @@ public:
         const StorageInMemoryMetadata & metadata,
         bool attach,
         ContextPtr context_,
+        std::unique_ptr<EmbededRocksDBSettings> storage_settings_,
         const String & primary_key_,
         Int32 ttl_ = 0,
         String rocksdb_dir_ = "",
@@ -83,7 +86,7 @@ public:
 
     bool supportsDelete() const override { return true; }
 
-    bool supportsTrivialCountOptimization() const override { return getContext(); }
+    bool supportsTrivialCountOptimization() const override { return getSettings()->optimize_trivial_approximate_count_query; }
 
     std::optional<UInt64> totalRows(const Settings & settings) const override;
 
@@ -97,10 +100,11 @@ private:
     String rocksdb_dir;
     Int32 ttl;
     bool read_only;
+    MultiVersion<EmbededRocksDBSettings> storage_settings;
 
     void initDB();
 
-    RocksDBSettingsPtr getSettings() const
+    EmbededRocksDBSettingsPtr getSettings() const
     {
         return storage_settings.get();
     }

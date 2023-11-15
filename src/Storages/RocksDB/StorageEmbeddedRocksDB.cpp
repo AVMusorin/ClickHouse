@@ -25,6 +25,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
+#include "Storages/RocksDB/EmbededRocksDBSettings.h"
 #include <base/sort.h>
 
 #include <rocksdb/table.h>
@@ -170,6 +171,7 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(const StorageID & table_id_,
         const StorageInMemoryMetadata & metadata_,
         bool attach,
         ContextPtr context_,
+        std::unique_ptr<EmbededRocksDBSettings> storage_settings_,
         const String & primary_key_,
         Int32 ttl_,
         String rocksdb_dir_,
@@ -180,6 +182,8 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(const StorageID & table_id_,
     , rocksdb_dir(std::move(rocksdb_dir_))
     , ttl(ttl_)
     , read_only(read_only_)
+    , storage_settings(std::move(storage_settings_))
+
 {
     setInMemoryMetadata(metadata_);
     if (rocksdb_dir.empty())
@@ -484,6 +488,12 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                         args.engine_name, engine_args.size());
     }
 
+    bool have_settings = args.storage_def->settings;
+    std::unique_ptr<EmbededRocksDBSettings> rocksdb_settings = std::make_unique<EmbededRocksDBSettings>();
+
+    if (have_settings)
+        rocksdb_settings->loadFromQuery(*args.storage_def);
+
     Int32 ttl{0};
     String rocksdb_dir;
     bool read_only{false};
@@ -507,7 +517,17 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageEmbeddedRocksDB must require one column in primary key");
     }
-    return std::make_shared<StorageEmbeddedRocksDB>(args.table_id, args.relative_data_path, metadata, args.attach, args.getContext(), primary_key_names[0], ttl, std::move(rocksdb_dir), read_only);
+    return std::make_shared<StorageEmbeddedRocksDB>(
+        args.table_id,
+        args.relative_data_path,
+        metadata,
+        args.attach,
+        args.getContext(),
+        std::move(rocksdb_settings),
+        primary_key_names[0],
+        ttl,
+        std::move(rocksdb_dir),
+        read_only);
 }
 
 std::shared_ptr<rocksdb::Statistics> StorageEmbeddedRocksDB::getRocksDBStatistics() const
@@ -601,6 +621,7 @@ Chunk StorageEmbeddedRocksDB::getBySerializedKeys(
 void registerStorageEmbeddedRocksDB(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures features{
+        .supports_settings = true,
         .supports_sort_order = true,
         .supports_ttl = true,
         .supports_parallel_insert = true,
@@ -609,8 +630,10 @@ void registerStorageEmbeddedRocksDB(StorageFactory & factory)
     factory.registerStorage("EmbeddedRocksDB", create, features);
 }
 
-std::optional<UInt64> StorageEmbeddedRocksDB::totalRows([[maybe_unused]] const Settings & settings) const
+std::optional<UInt64> StorageEmbeddedRocksDB::totalRows(const Settings & settings) const
 {
+    if (!settings.optimize_trivial_approximate_count_query)
+        return {};
     std::shared_lock lock(rocksdb_ptr_mx);
     if (!rocksdb_ptr)
         return {};
