@@ -26,6 +26,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
+#include <Common/CurrentMetrics.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Port.h>
@@ -47,6 +48,11 @@
 #include <unordered_map>
 #include <utility>
 
+
+namespace CurrentMetrics
+{
+    extern const Metric TemporaryFilesForResponseBuffering;
+}
 
 namespace DB
 {
@@ -341,7 +347,7 @@ void HTTPHandler::processQuery(
 
         if (buffer_until_eof)
         {
-            auto tmp_data = server.context()->getTempDataOnDisk();
+            auto tmp_data = server.context()->getTempDataOnDisk()->childScope(CurrentMetrics::TemporaryFilesForResponseBuffering);
             cascade_buffers_lazy.emplace_back([tmp_data](const WriteBufferPtr &) -> WriteBufferPtr
             {
                 return std::make_unique<TemporaryDataBuffer>(tmp_data.get());
