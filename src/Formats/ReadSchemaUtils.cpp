@@ -3,6 +3,7 @@
 #include <Formats/ReadSchemaUtils.h>
 #include <IO/EmptyReadBuffer.h>
 #include <IO/PeekableReadBuffer.h>
+#include <IO/S3Common.h>
 #include <IO/WithFileSize.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -58,6 +59,21 @@ static std::optional<NamesAndTypesList> getOrderedColumnsList(const NamesAndType
 static bool isRetryableSchemaInferenceError(int code)
 {
     return code == ErrorCodes::EMPTY_DATA_PASSED || code == ErrorCodes::ONLY_NULLS_WHILE_READING_SCHEMA;
+}
+
+static bool shouldRethrowSchemaInferenceOpenErrorUnchanged(const Exception & e)
+{
+#if USE_AWS_S3
+    const auto * s3_exception = dynamic_cast<const S3Exception *>(&e);
+    if (!s3_exception)
+        return false;
+
+    const auto s3_error_code = s3_exception->getS3ErrorCode();
+    return s3_error_code == Aws::S3::S3Errors::NO_SUCH_KEY || s3_error_code == Aws::S3::S3Errors::RESOURCE_NOT_FOUND;
+#else
+    UNUSED(e);
+    return false;
+#endif
 }
 
 /// Order of formats to try in automatic format detection.
@@ -193,6 +209,9 @@ try
             }
             catch (Exception & e)
             {
+                if (shouldRethrowSchemaInferenceOpenErrorUnchanged(e))
+                    throw;
+
                 if (format_name)
                     e.addMessage(fmt::format("The table structure cannot be extracted from a {} format file. You can specify the structure manually", *format_name));
                 else

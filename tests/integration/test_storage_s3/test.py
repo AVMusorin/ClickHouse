@@ -1492,6 +1492,19 @@ def test_create_new_files_on_insert(started_cluster):
     instance.query("drop table test_multiple_inserts")
 
 
+def test_missing_parquet_object_schema_inference_keeps_404(started_cluster):
+    instance = started_cluster.instances["dummy"]
+
+    error = instance.query_and_get_error(
+        f"DESC s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/missing_schema_inference.parquet', 'minio', '{minio_secret_key}')"
+    )
+
+    assert "Failed to get object info" in error
+    assert "HTTP response code: 404" in error
+    assert "missing_schema_inference.parquet" in error
+    assert "The table structure cannot be extracted from a Parquet format file" not in error
+
+
 def test_format_detection(started_cluster):
     bucket = started_cluster.minio_bucket
     instance = started_cluster.instances["dummy"]
